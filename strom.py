@@ -13,7 +13,7 @@ EMAIL = "mail@joachim-breitner.de"
 PASSWORD_FILE = Path(__file__).parent / "password"
 
 API = "https://api.dynatarif.de"
-CET = timezone(timedelta(hours=1))
+LOCAL_TZ = datetime.now(timezone.utc).astimezone().tzinfo
 
 
 def api_request(path, token=None, form_data=None):
@@ -45,7 +45,7 @@ def login():
 
 def fetch_prices(token, contract_id):
     """Fetch today's + tomorrow's price data."""
-    now = datetime.now(CET)
+    now = datetime.now(LOCAL_TZ)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_end = today_start + timedelta(days=2)
 
@@ -64,15 +64,15 @@ def fetch_prices(token, contract_id):
 
 
 def parse_time(iso_str):
-    return datetime.fromisoformat(iso_str)
+    return datetime.fromisoformat(iso_str).astimezone(LOCAL_TZ)
 
 
 def format_time(dt):
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
-def cheapest_non_overlapping(prices, window_hours):
-    """Find cheapest non-overlapping windows greedily."""
+def cheapest_windows(prices, window_hours):
+    """Find cheapest windows greedily, allowing up to 50% overlap."""
     window_size = window_hours * 4  # 15-minute intervals
     if len(prices) < window_size:
         return []
@@ -89,14 +89,15 @@ def cheapest_non_overlapping(prices, window_hours):
             "avg_price_ct_kwh": round(avg, 4),
         })
 
-    # Greedily pick cheapest non-overlapping windows
+    # Greedily pick cheapest windows, allowing up to 50% overlap
+    max_overlap = window_size // 2
     sorted_windows = sorted(windows, key=lambda x: x["avg_price_ct_kwh"])
     selected = []
     used = set()
 
     for w in sorted_windows:
         indices = set(range(w["index"], w["index"] + window_size))
-        if not indices & used:
+        if len(indices & used) <= max_overlap:
             selected.append(w)
             used |= indices
 
@@ -130,7 +131,7 @@ def main():
     day_avg = sum(p["price_ct_kwh"] for p in prices) / len(prices)
 
     # Find current price
-    now = datetime.now(CET)
+    now = datetime.now(LOCAL_TZ)
     current = None
     for entry in prices:
         if parse_time(entry["start"]) <= now < parse_time(entry["end"]):
@@ -150,9 +151,9 @@ def main():
     print(f"\nDay average: {day_avg:.2f} ct/kWh")
 
     # Cheapest non-overlapping windows
-    windows = cheapest_non_overlapping(prices, args.window)
+    windows = cheapest_windows(prices, args.window)
     if windows:
-        print(f"\n{args.window}h cheapest non-overlapping windows:")
+        print(f"\n{args.window}h cheapest windows:")
         print(f"{'Start':>16s} — {'End':>5s}  {'avg ct/kWh':>10s}  {'vs day avg':>10s}")
         print("-" * 50)
         for w in windows:
