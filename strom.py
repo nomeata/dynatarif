@@ -1,149 +1,120 @@
 #!/usr/bin/env python3
-"""Scrape dynamic electricity prices from web.dynatarif.de."""
+"""Fetch dynamic electricity prices from api.dynatarif.de."""
 
 import argparse
 import json
 import sys
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from playwright.sync_api import sync_playwright
 
 EMAIL = "mail@joachim-breitner.de"
 PASSWORD_FILE = Path(__file__).parent / "password"
 
+API = "https://api.dynatarif.de"
 CET = timezone(timedelta(hours=1))
 
 
-def login_and_fetch(page):
-    """Log in via the Flutter UI and capture API responses."""
-    captured = []
+def api_request(path, token=None, form_data=None):
+    """Make an API request and return parsed JSON."""
+    url = f"{API}{path}"
+    data = urllib.parse.urlencode(form_data).encode() if form_data else None
+    req = urllib.request.Request(url, data=data)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
 
-    def handle_response(response):
-        url = response.url
-        content_type = response.headers.get("content-type", "")
-        if "json" in content_type and "api.dynatarif.de" in url:
-            try:
-                body = response.json()
-                captured.append({"url": url, "body": body})
-            except Exception:
-                pass
 
-    page.on("response", handle_response)
-
+def login():
+    """Authenticate and return (access_token, contract_id)."""
     password = PASSWORD_FILE.read_text().strip()
+    body = api_request("/tokens/", form_data={
+        "grant_type": "password",
+        "username": EMAIL,
+        "password": password,
+    })
+    token = body["access_token"]
 
-    print("Navigating to web.dynatarif.de...", file=sys.stderr)
-    page.goto("https://web.dynatarif.de/", wait_until="networkidle")
-    page.wait_for_timeout(3000)
+    user = api_request("/users/me/", token=token)
+    contract_id = user["contracts"][0]["contract_id"]
 
-    # Tab to focus email field (Flutter creates <input> on focus)
-    print("Logging in...", file=sys.stderr)
-    page.keyboard.press("Tab")
-    page.wait_for_timeout(500)
-    page.keyboard.type(EMAIL, delay=50)
-    page.wait_for_timeout(300)
-
-    # Tab to password field
-    page.keyboard.press("Tab")
-    page.wait_for_timeout(500)
-    page.keyboard.type(password, delay=50)
-    page.wait_for_timeout(300)
-
-    # Tab from password field to LOGIN button, then press Enter
-    page.keyboard.press("Tab")
-    page.wait_for_timeout(300)
-    page.keyboard.press("Enter")
-
-    # Wait for price data to load
-    print("Waiting for data...", file=sys.stderr)
-    page.wait_for_timeout(10000)
-
-    return captured
+    return token, contract_id
 
 
-def fetch_all_prices(page, captured):
-    """Use the captured auth token to fetch the full day's price data via the API."""
-    token = None
-    contract_id = None
-    for resp in captured:
-        if "/tokens/" in resp["url"]:
-            token = resp["body"].get("access_token")
-        if "/users/me/" in resp["url"]:
-            contracts = resp["body"].get("contracts", [])
-            if contracts:
-                contract_id = contracts[0].get("contract_id")
-
-    if not token or not contract_id:
-        print("ERROR: Could not extract token or contract_id", file=sys.stderr)
-        return []
-
+def fetch_prices(token, contract_id):
+    """Fetch today's + tomorrow's price data."""
     now = datetime.now(CET)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_end = today_start + timedelta(days=2)
 
-    url = (
-        f"https://api.dynatarif.de/tariffs/prognosis"
-        f"?timezone=Europe%2FBerlin"
-        f"&page_size=200"
-        f"&pages_list=false"
-        f"&sort=valid_from%3Aasc"
-        f"&filters=valid_from%3Agte%3A{today_start.isoformat()}"
-        f"&filters=valid_from%3Alte%3A{tomorrow_end.isoformat()}"
-        f"&contract_id={contract_id}"
-    )
+    params = urllib.parse.urlencode([
+        ("timezone", "Europe/Berlin"),
+        ("page_size", "200"),
+        ("pages_list", "false"),
+        ("sort", "valid_from:asc"),
+        ("filters", f"valid_from:gte:{today_start.isoformat()}"),
+        ("filters", f"valid_from:lte:{tomorrow_end.isoformat()}"),
+        ("contract_id", contract_id),
+    ])
 
-    response = page.evaluate("""async (args) => {
-        const resp = await fetch(args.url, {
-            headers: { 'Authorization': 'Bearer ' + args.token }
-        });
-        return await resp.json();
-    }""", {"url": url, "token": token})
-
-    return response.get("data", [])
+    body = api_request(f"/tariffs/prognosis?{params}", token=token)
+    return body.get("data", [])
 
 
 def parse_time(iso_str):
-    """Parse an ISO timestamp string to a datetime object."""
     return datetime.fromisoformat(iso_str)
 
 
 def format_time(dt):
-    """Format datetime as 'YYYY-MM-DD HH:MM'."""
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
-def compute_moving_average(prices, window_hours):
-    """Compute moving average over a window of hours."""
+def cheapest_non_overlapping(prices, window_hours):
+    """Find cheapest non-overlapping windows greedily."""
     window_size = window_hours * 4  # 15-minute intervals
-    results = []
+    if len(prices) < window_size:
+        return []
 
+    # Build all possible windows with their average price
+    windows = []
     for i in range(len(prices) - window_size + 1):
-        window = prices[i:i + window_size]
-        avg = sum(p["price_ct_kwh"] for p in window) / len(window)
-        results.append({
-            "start": parse_time(window[0]["start"]),
-            "end": parse_time(window[-1]["end"]),
+        w = prices[i:i + window_size]
+        avg = sum(p["price_ct_kwh"] for p in w) / len(w)
+        windows.append({
+            "index": i,
+            "start": parse_time(w[0]["start"]),
+            "end": parse_time(w[-1]["end"]),
             "avg_price_ct_kwh": round(avg, 4),
         })
 
-    return results
+    # Greedily pick cheapest non-overlapping windows
+    sorted_windows = sorted(windows, key=lambda x: x["avg_price_ct_kwh"])
+    selected = []
+    used = set()
+
+    for w in sorted_windows:
+        indices = set(range(w["index"], w["index"] + window_size))
+        if not indices & used:
+            selected.append(w)
+            used |= indices
+
+    selected.sort(key=lambda x: x["start"])
+    return selected
 
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch dynamic electricity prices")
     parser.add_argument("--window", type=int, default=3, help="Moving average window in hours (default: 3)")
-    parser.add_argument("--json", action="store_true", help="Output raw JSON instead of formatted table")
+    parser.add_argument("--json", action="store_true", help="Output raw JSON")
     args = parser.parse_args()
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1280, "height": 720})
-        page = context.new_page()
+    print("Logging in...", file=sys.stderr)
+    token, contract_id = login()
 
-        captured = login_and_fetch(page)
-        prices = fetch_all_prices(page, captured)
-
-        browser.close()
+    print("Fetching prices...", file=sys.stderr)
+    prices = fetch_prices(token, contract_id)
 
     if not prices:
         print("ERROR: No price data received", file=sys.stderr)
@@ -155,40 +126,44 @@ def main():
         print(json.dumps(prices, indent=2))
         return
 
+    # 24h average
+    day_avg = sum(p["price_ct_kwh"] for p in prices) / len(prices)
+
     # Find current price
     now = datetime.now(CET)
     current = None
     for entry in prices:
-        start = parse_time(entry["start"])
-        end = parse_time(entry["end"])
-        if start <= now < end:
+        if parse_time(entry["start"]) <= now < parse_time(entry["end"]):
             current = entry
             break
 
     # Print price table
-    print(f"\n{'Time':>16s}  {'ct/kWh':>8s}")
-    print("-" * 27)
+    print(f"\n{'Time':>16s}  {'ct/kWh':>8s}  {'vs avg':>7s}")
+    print("-" * 36)
     for entry in prices:
         start = parse_time(entry["start"])
         price = entry["price_ct_kwh"]
+        diff = price - day_avg
         marker = " <--" if entry is current else ""
-        print(f"{format_time(start)}  {price:8.4f}{marker}")
+        print(f"{format_time(start)}  {price:8.2f}  {diff:+7.2f}{marker}")
 
-    # Moving averages — cheapest windows
-    averages = compute_moving_average(prices, args.window)
-    if averages:
-        sorted_avgs = sorted(averages, key=lambda x: x["avg_price_ct_kwh"])
+    print(f"\nDay average: {day_avg:.2f} ct/kWh")
 
-        print(f"\n{args.window}h cheapest windows:")
-        print(f"{'Start':>16s}  {'End':>5s}  {'avg ct/kWh':>10s}")
-        print("-" * 36)
-        for entry in sorted_avgs[:5]:
-            s = format_time(entry["start"])
-            e = entry["end"].strftime("%H:%M")
-            print(f"{s}  {e:>5s}  {entry['avg_price_ct_kwh']:10.4f}")
+    # Cheapest non-overlapping windows
+    windows = cheapest_non_overlapping(prices, args.window)
+    if windows:
+        print(f"\n{args.window}h cheapest non-overlapping windows:")
+        print(f"{'Start':>16s} — {'End':>5s}  {'avg ct/kWh':>10s}  {'vs day avg':>10s}")
+        print("-" * 50)
+        for w in windows:
+            s = format_time(w["start"])
+            e = w["end"].strftime("%H:%M")
+            diff = w["avg_price_ct_kwh"] - day_avg
+            print(f"{s} — {e}  {w['avg_price_ct_kwh']:10.2f}  {diff:+10.2f}")
 
     if current:
-        print(f"\nNow ({now.strftime('%H:%M')}): {current['price_ct_kwh']:.2f} ct/kWh")
+        diff = current["price_ct_kwh"] - day_avg
+        print(f"\nNow ({now.strftime('%H:%M')}): {current['price_ct_kwh']:.2f} ct/kWh ({diff:+.2f} vs avg)")
 
 
 if __name__ == "__main__":
