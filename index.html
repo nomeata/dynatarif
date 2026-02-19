@@ -231,9 +231,12 @@ function computeWindows(prices, windowSlots) {
   }
 
   for (let i = 0; i < windows.length; i++) {
-    const prev = i > 0 ? windows[i - 1].avg : Infinity;
-    const next = i < windows.length - 1 ? windows[i + 1].avg : Infinity;
-    windows[i].isMinimum = windows[i].avg <= prev && windows[i].avg <= next && windows.length > 1;
+    let isMin = windows.length > 1;
+    for (let d = 1; d <= 3 && isMin; d++) {
+      if (i - d >= 0) isMin = windows[i].avg <= windows[i - d].avg;
+      if (i + d < windows.length) isMin = isMin && windows[i].avg <= windows[i + d].avg;
+    }
+    windows[i].isMinimum = isMin;
   }
 
   return { windows, dailyAvgs };
