@@ -15,7 +15,7 @@ This is a single static HTML page that talks directly to the dynatarif API from 
 
 ## Usage
 
-Open `index.html` in a browser and log in with your dynatarif credentials, or host it anywhere (e.g. GitHub Pages) — the API supports CORS from any origin.
+Use it at **<https://dynatarif.nomeata.de/>** and log in with your dynatarif credentials, or open `index.html` locally — the API supports CORS from any origin.
 
 ## Disclaimer
 
