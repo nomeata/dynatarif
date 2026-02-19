@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strompreise</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Login */
+#login { display: flex; align-items: center; justify-content: center; flex: 1; }
+#login form { background: #16213e; padding: 2rem; border-radius: 8px; display: flex; flex-direction: column; gap: 1rem; width: 320px; }
+#login h2 { text-align: center; color: #e94560; }
+#login input { padding: .6rem; border-radius: 4px; border: 1px solid #333; background: #0f3460; color: #e0e0e0; font-size: 1rem; }
+#login button { padding: .6rem; border-radius: 4px; border: none; background: #e94560; color: white; font-size: 1rem; cursor: pointer; }
+#login button:hover { background: #c73650; }
+#login .error { color: #e94560; font-size: .85rem; text-align: center; }
+#login .logout-hint { font-size: .75rem; color: #666; text-align: center; }
+
+/* Main app */
+#app { display: none; flex-direction: column; height: 100vh; }
+#header { display: flex; align-items: center; justify-content: space-between; padding: .5rem 1rem; background: #16213e; flex-shrink: 0; }
+#header h1 { font-size: 1.1rem; color: #e94560; }
+#header button { background: none; border: 1px solid #555; color: #aaa; padding: .3rem .7rem; border-radius: 4px; cursor: pointer; font-size: .8rem; }
+
+/* X axis */
+#x-axis { display: flex; align-items: flex-end; padding: 0; flex-shrink: 0; height: 22px; border-bottom: 1px solid #333; }
+#x-axis .axis-pad { width: 52px; flex-shrink: 0; }
+#x-axis .axis-area { flex: 1; position: relative; height: 100%; }
+.axis-tick { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 10px; color: #888; font-variant-numeric: tabular-nums; line-height: 22px; }
+
+#chart-container { flex: 1; overflow-y: auto; padding: 0; position: relative; }
+#chart { width: 100%; position: relative; }
+
+/* Details panel */
+#details { background: #16213e; padding: .6rem 1rem; flex-shrink: 0; font-size: .9rem; min-height: 2.5rem; display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+#details .label { color: #888; }
+#details .value { color: #e0e0e0; font-weight: 600; }
+#details .saving-positive { color: #4ecca3; }
+#details .saving-negative { color: #e94560; }
+
+/* Slider */
+#controls { background: #16213e; padding: .5rem 1rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; border-top: 1px solid #333; }
+#controls label { font-size: .85rem; color: #888; white-space: nowrap; }
+#controls input[type=range] { flex: 1; accent-color: #e94560; }
+#controls .window-label { font-size: .85rem; color: #e94560; font-weight: 600; min-width: 3.5rem; }
+
+/* Bar rows */
+.bar-row { display: flex; align-items: stretch; cursor: pointer; position: relative; }
+.bar-row.highlight .bar, .bar-row.highlight.minimum .bar { background: #8899bb !important; }
+.bar-row.highlight .bar-label { color: #e0e0e0; }
+.bar-row.locked .bar, .bar-row.locked.minimum .bar { background: #5b8bd4 !important; }
+.bar-row.locked .bar-label { color: #5b8bd4; font-weight: 700; }
+.bar-row.minimum .bar { background: #4ecca3 !important; }
+.bar-label { width: 52px; text-align: right; font-size: 11px; padding-right: 6px; flex-shrink: 0; color: #888; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: flex-end; }
+.bar-area { flex: 1; position: relative; display: flex; align-items: stretch; }
+.bar { width: 0; min-width: 1px; position: relative; z-index: 1; transition: width 0.2s; background: #667; }
+.avg-line { position: absolute; top: 0; bottom: 0; border-left: 2px dotted rgba(233, 69, 96, 0.5); z-index: 2; pointer-events: none; }
+.day-separator { height: 1px; background: #333; margin: 0 0 0 52px; }
+.day-label { font-size: 11px; color: #e94560; padding: 3px 0 2px 52px; font-weight: 600; }
+.now-marker .bar-label { color: #e94560; font-weight: 700; }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: #16213e; border-radius: 8px; padding: 1.5rem; width: 400px; max-width: 90vw; }
+.modal h3 { color: #e94560; margin-bottom: .8rem; }
+.modal p { font-size: .85rem; color: #aaa; margin-bottom: 1rem; line-height: 1.4; }
+.modal .url-box { display: flex; gap: .5rem; }
+.modal input[type=text] { flex: 1; padding: .5rem; border-radius: 4px; border: 1px solid #333; background: #0f3460; color: #e0e0e0; font-size: .8rem; font-family: monospace; }
+.modal .btn { padding: .5rem 1rem; border-radius: 4px; border: none; cursor: pointer; font-size: .85rem; }
+.modal .btn-primary { background: #e94560; color: white; }
+.modal .btn-primary:hover { background: #c73650; }
+.modal .btn-secondary { background: #333; color: #aaa; }
+.modal .btn-secondary:hover { background: #444; }
+.modal .btn-row { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+.modal .copied { color: #4ecca3; font-size: .8rem; margin-top: .5rem; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form id="login-form">
+    <h2>Strompreise</h2>
+    <input type="email" id="email" placeholder="Email" required>
+    <input type="password" id="password" placeholder="Passwort" required>
+    <button type="submit">Anmelden</button>
+    <div id="login-error" class="error"></div>
+    <div class="logout-hint">Zugangsdaten werden nicht gespeichert</div>
+  </form>
+</div>
+
+<div id="app">
+  <div id="header">
+    <h1>Strompreise</h1>
+    <div style="display:flex;gap:.5rem">
+      <button id="share-btn">Teilen</button>
+      <button id="logout-btn">Abmelden</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="share-modal">
+    <div class="modal">
+      <h3>Zugang teilen</h3>
+      <p>Dieser Link gibt vollen Lesezugriff auf die Strompreise deines Vertrags. Der Empfänger braucht kein Passwort, kann aber alle Preisdaten sehen. Der Zugang ist gültig, solange das Token nicht abläuft.</p>
+      <div class="url-box">
+        <input type="text" id="share-url" readonly>
+        <button class="btn btn-primary" id="copy-btn">Kopieren</button>
+      </div>
+      <div id="copy-status"></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="share-close-btn">Schließen</button>
+      </div>
+    </div>
+  </div>
+  <div id="x-axis">
+    <div class="axis-pad"></div>
+    <div class="axis-area" id="axis-area"></div>
+  </div>
+  <div id="chart-container"><div id="chart"></div></div>
+  <div id="details">
+    <span style="color:#555">Zeile berühren für Details</span>
+  </div>
+  <div id="controls">
+    <label for="window-slider">Fenster:</label>
+    <input type="range" id="window-slider" min="1" max="16" value="1">
+    <span class="window-label" id="window-label">15 min</span>
+  </div>
+</div>
+
+<script>
+const API = "https://api.dynatarif.de";
+
+// --- Auth ---
+async function apiRequest(path, token, formData) {
+  const opts = { headers: {} };
+  if (token) opts.headers["Authorization"] = `Bearer ${token}`;
+  if (formData) {
+    opts.method = "POST";
+    opts.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    opts.body = new URLSearchParams(formData).toString();
+  }
+  const resp = await fetch(`${API}${path}`, opts);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function login(email, password) {
+  const body = await apiRequest("/tokens/", null, {
+    grant_type: "password", username: email, password: password,
+  });
+  const token = body.access_token;
+  const user = await apiRequest("/users/me/", token);
+  const contractId = user.contracts[0].contract_id;
+  return { token, contractId };
+}
+
+async function fetchPrices(token, contractId) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrowEnd = new Date(todayStart.getTime() + 2 * 86400000);
+
+  const tz = "Europe/Berlin";
+  const params = new URLSearchParams([
+    ["timezone", tz], ["page_size", "200"], ["pages_list", "false"],
+    ["sort", "valid_from:asc"],
+    ["filters", `valid_from:gte:${todayStart.toISOString()}`],
+    ["filters", `valid_from:lte:${tomorrowEnd.toISOString()}`],
+    ["contract_id", contractId],
+  ]);
+  const body = await apiRequest(`/tariffs/prognosis?${params}`, token);
+  return body.data || [];
+}
+
+// --- State ---
+let state = { prices: [], windowSlots: 1, lockedIndex: -1, maxPrice: 0 };
+
+function getToken() { return localStorage.getItem("strom_token"); }
+function getContractId() { return localStorage.getItem("strom_contract"); }
+function setAuth(token, contractId) {
+  localStorage.setItem("strom_token", token);
+  localStorage.setItem("strom_contract", contractId);
+}
+function clearAuth() {
+  localStorage.removeItem("strom_token");
+  localStorage.removeItem("strom_contract");
+}
+
+// --- Computation ---
+function parseTime(iso) { return new Date(iso); }
+
+function formatTime(d) {
+  return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDate(d) {
+  return d.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function computeWindows(prices, windowSlots) {
+  if (prices.length === 0) return { windows: [], dailyAvgs: {} };
+
+  const dayBuckets = {};
+  for (const p of prices) {
+    const d = parseTime(p.start);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!dayBuckets[key]) dayBuckets[key] = [];
+    dayBuckets[key].push(p.price_ct_kwh);
+  }
+  const dailyAvgs = {};
+  for (const [k, vals] of Object.entries(dayBuckets)) {
+    dailyAvgs[k] = vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+
+  const windows = [];
+  for (let i = 0; i <= prices.length - windowSlots; i++) {
+    const slice = prices.slice(i, i + windowSlots);
+    const avg = slice.reduce((s, p) => s + p.price_ct_kwh, 0) / windowSlots;
+    const start = parseTime(slice[0].start);
+    const end = parseTime(slice[slice.length - 1].end);
+    const dayKey = `${start.getFullYear()}-${start.getMonth()}-${start.getDate()}`;
+    windows.push({
+      index: i, start, end, avg,
+      momentary: prices[i].price_ct_kwh,
+      dayKey,
+      dailyAvg: dailyAvgs[dayKey],
+    });
+  }
+
+  for (let i = 0; i < windows.length; i++) {
+    const prev = i > 0 ? windows[i - 1].avg : Infinity;
+    const next = i < windows.length - 1 ? windows[i + 1].avg : Infinity;
+    windows[i].isMinimum = windows[i].avg <= prev && windows[i].avg <= next && windows.length > 1;
+  }
+
+  return { windows, dailyAvgs };
+}
+
+// --- Highlight management ---
+function highlightRow(row) {
+  document.querySelectorAll(".bar-row.highlight").forEach(r => r.classList.remove("highlight"));
+  if (row) row.classList.add("highlight");
+}
+
+// --- Rendering ---
+function renderAxis() {
+  const area = document.getElementById("axis-area");
+  area.innerHTML = "";
+  if (!state.maxPrice) return;
+
+  // Nice tick interval
+  const raw = state.maxPrice;
+  const step = raw <= 10 ? 2 : raw <= 20 ? 5 : raw <= 50 ? 10 : 20;
+  for (let v = 0; v <= raw; v += step) {
+    const tick = document.createElement("div");
+    tick.className = "axis-tick";
+    tick.style.left = ((v / state.maxPrice) * 100) + "%";
+    tick.textContent = v;
+    area.appendChild(tick);
+  }
+  // Unit at the end
+  const unit = document.createElement("div");
+  unit.className = "axis-tick";
+  unit.style.left = "100%";
+  unit.style.transform = "translateX(-100%)";
+  unit.style.color = "#555";
+  unit.textContent = "ct/kWh";
+  area.appendChild(unit);
+}
+
+function render() {
+  const { windows, dailyAvgs } = computeWindows(state.prices, state.windowSlots);
+  const chart = document.getElementById("chart");
+  chart.innerHTML = "";
+  state.lockedIndex = -1;
+
+  if (windows.length === 0) {
+    chart.innerHTML = '<div style="padding:2rem;text-align:center;color:#555">Keine Daten</div>';
+    state.maxPrice = 0;
+    renderAxis();
+    return;
+  }
+
+  state.maxPrice = Math.max(...windows.map(w => w.avg), ...Object.values(dailyAvgs)) * 1.05;
+  const maxPrice = state.maxPrice;
+  const now = new Date();
+
+  renderAxis();
+
+  let lastDayKey = null;
+
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i];
+
+    if (w.dayKey !== lastDayKey) {
+      lastDayKey = w.dayKey;
+      const label = document.createElement("div");
+      label.className = "day-label";
+      label.textContent = formatDate(w.start);
+      chart.appendChild(label);
+      if (i > 0) {
+        const sep = document.createElement("div");
+        sep.className = "day-separator";
+        chart.appendChild(sep);
+      }
+    }
+
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    if (w.isMinimum) row.classList.add("minimum");
+    if (now >= w.start && now < w.end) row.classList.add("now-marker");
+
+    const labelEl = document.createElement("div");
+    labelEl.className = "bar-label";
+    labelEl.textContent = formatTime(w.start);
+
+    const barArea = document.createElement("div");
+    barArea.className = "bar-area";
+
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    bar.style.width = Math.max(0, (w.avg / maxPrice) * 100) + "%";
+
+    const avgLine = document.createElement("div");
+    avgLine.className = "avg-line";
+    avgLine.style.left = ((w.dailyAvg / maxPrice) * 100) + "%";
+
+    barArea.appendChild(avgLine);
+    barArea.appendChild(bar);
+    row.appendChild(labelEl);
+    row.appendChild(barArea);
+
+    row.addEventListener("mouseenter", () => {
+      if (state.lockedIndex === -1) {
+        highlightRow(row);
+        showDetails(w);
+      }
+    });
+
+    row.addEventListener("mouseleave", () => {
+      if (state.lockedIndex === -1) {
+        highlightRow(null);
+      }
+    });
+
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (state.lockedIndex === i) {
+        // Unlock
+        state.lockedIndex = -1;
+        document.querySelectorAll(".bar-row.locked").forEach(r => r.classList.remove("locked"));
+        highlightRow(row);
+      } else {
+        // Lock to this row
+        state.lockedIndex = i;
+        document.querySelectorAll(".bar-row.locked").forEach(r => r.classList.remove("locked"));
+        highlightRow(null);
+        row.classList.add("locked");
+        showDetails(w);
+      }
+    });
+
+    chart.appendChild(row);
+  }
+
+  // Click outside chart rows unlocks
+  document.getElementById("chart-container").addEventListener("click", (e) => {
+    if (e.target.closest(".bar-row")) return;
+    if (state.lockedIndex !== -1) {
+      state.lockedIndex = -1;
+      document.querySelectorAll(".bar-row.locked").forEach(r => r.classList.remove("locked"));
+      document.getElementById("details").innerHTML = '<span style="color:#555">Zeile berühren für Details</span>';
+    }
+  });
+
+  const nowRow = chart.querySelector(".now-marker");
+  if (nowRow) {
+    nowRow.scrollIntoView({ block: "center", behavior: "instant" });
+  }
+}
+
+function showDetails(w) {
+  const details = document.getElementById("details");
+  const saving = w.dailyAvg - w.avg;
+  const savingClass = saving >= 0 ? "saving-positive" : "saving-negative";
+  const sign = saving >= 0 ? "+" : "";
+  const windowMin = state.windowSlots * 15;
+  const windowLabel = windowMin >= 60 ? `${windowMin / 60}h` : `${windowMin} min`;
+
+  details.innerHTML = `
+    <span><span class="label">Aktuell: </span><span class="value">${w.momentary.toFixed(2)} ct/kWh</span></span>
+    <span><span class="label">${windowLabel}-Schnitt: </span><span class="value">${w.avg.toFixed(2)} ct/kWh</span></span>
+    <span><span class="label">Tagesschnitt: </span><span class="value">${w.dailyAvg.toFixed(2)} ct/kWh</span></span>
+    <span><span class="label">Ersparnis: </span><span class="value ${savingClass}">${sign}${saving.toFixed(2)} ct/kWh</span></span>
+    <span><span class="label">${formatTime(w.start)} – ${formatTime(w.end)}</span></span>
+  `;
+}
+
+function formatWindowLabel(slots) {
+  const min = slots * 15;
+  if (min < 60) return `${min} min`;
+  const h = min / 60;
+  return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
+}
+
+// --- Init ---
+async function initApp() {
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+
+  try {
+    state.prices = await fetchPrices(getToken(), getContractId());
+    render();
+  } catch (e) {
+    console.error("Fetch failed:", e);
+    clearAuth();
+    location.reload();
+  }
+}
+
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("login-error");
+  errEl.textContent = "";
+  const email = document.getElementById("email").value;
+  const pw = document.getElementById("password").value;
+  try {
+    const { token, contractId } = await login(email, pw);
+    setAuth(token, contractId);
+    initApp();
+  } catch (err) {
+    errEl.textContent = "Anmeldung fehlgeschlagen";
+  }
+});
+
+document.getElementById("logout-btn").addEventListener("click", () => {
+  clearAuth();
+  location.reload();
+});
+
+document.getElementById("window-slider").addEventListener("input", (e) => {
+  state.windowSlots = parseInt(e.target.value);
+  document.getElementById("window-label").textContent = formatWindowLabel(state.windowSlots);
+  document.getElementById("details").innerHTML = '<span style="color:#555">Zeile berühren für Details</span>';
+  render();
+});
+
+// --- Share ---
+document.getElementById("share-btn").addEventListener("click", () => {
+  const token = getToken();
+  const contractId = getContractId();
+  if (!token || !contractId) return;
+  const hash = "#token=" + encodeURIComponent(token) + "&contract=" + encodeURIComponent(contractId);
+  const url = location.origin + location.pathname + hash;
+  document.getElementById("share-url").value = url;
+  document.getElementById("copy-status").textContent = "";
+  document.getElementById("share-modal").classList.add("open");
+});
+
+document.getElementById("copy-btn").addEventListener("click", () => {
+  const urlInput = document.getElementById("share-url");
+  navigator.clipboard.writeText(urlInput.value).then(() => {
+    document.getElementById("copy-status").innerHTML = '<span class="copied">Link kopiert!</span>';
+  });
+});
+
+document.getElementById("share-close-btn").addEventListener("click", () => {
+  document.getElementById("share-modal").classList.remove("open");
+});
+
+document.getElementById("share-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) {
+    document.getElementById("share-modal").classList.remove("open");
+  }
+});
+
+// --- Import token from hash ---
+function importFromHash() {
+  const hash = location.hash;
+  if (!hash || !hash.includes("token=")) return false;
+  const params = new URLSearchParams(hash.slice(1));
+  const token = params.get("token");
+  const contractId = params.get("contract");
+  if (token && contractId) {
+    setAuth(token, contractId);
+    history.replaceState(null, "", location.pathname + location.search);
+    return true;
+  }
+  return false;
+}
+
+importFromHash();
+
+if (getToken()) {
+  initApp();
+}
+</script>
+</body>
+</html>
