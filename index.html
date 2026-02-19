@@ -282,6 +282,8 @@ function renderAxis() {
 function render() {
   const { windows, dailyAvgs } = computeWindows(state.prices, state.windowSlots);
   const chart = document.getElementById("chart");
+  const container = document.getElementById("chart-container");
+  const scrollTop = container.scrollTop;
   chart.innerHTML = "";
   state.lockedIndex = -1;
 
@@ -412,9 +414,14 @@ function render() {
     }
   });
 
-  const nowRow = chart.querySelector(".now-marker");
-  if (nowRow) {
-    nowRow.scrollIntoView({ block: "center", behavior: "instant" });
+  container.scrollTop = scrollTop;
+
+  if (state.scrollToNow) {
+    state.scrollToNow = false;
+    const nowRow = chart.querySelector(".now-marker");
+    if (nowRow) {
+      nowRow.scrollIntoView({ block: "center", behavior: "instant" });
+    }
   }
 }
 
@@ -444,6 +451,7 @@ async function initApp() {
 
   try {
     state.prices = await fetchPrices(getToken(), getContractId());
+    state.scrollToNow = true;
     render();
   } catch (e) {
     console.error("Fetch failed:", e);
