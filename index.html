@@ -49,10 +49,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
 /* Bar rows */
 .bar-row { display: flex; align-items: stretch; cursor: pointer; position: relative; }
-.bar-row.highlight .bar, .bar-row.highlight.minimum .bar { background: #8899bb !important; }
-.bar-row.highlight .bar-label { color: #e0e0e0; }
-.bar-row.locked .bar, .bar-row.locked.minimum .bar { background: #5b8bd4 !important; }
-.bar-row.locked .bar-label { color: #5b8bd4; font-weight: 700; }
+.bar-row.highlight .bar, .bar-row.highlight.minimum .bar,
+.bar-row.locked .bar, .bar-row.locked.minimum .bar { background: #8899bb !important; }
+.bar-row.highlight .bar-label,
+.bar-row.locked .bar-label { color: #e0e0e0; }
 .bar-row.minimum .bar { background: #4ecca3 !important; }
 .bar-label { width: 52px; text-align: right; font-size: 11px; padding-right: 6px; flex-shrink: 0; color: #888; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: flex-end; }
 .bar-area { flex: 1; position: relative; display: flex; align-items: stretch; }
@@ -240,8 +240,16 @@ function computeWindows(prices, windowSlots) {
 
 // --- Highlight management ---
 function highlightRow(row) {
-  document.querySelectorAll(".bar-row.highlight").forEach(r => r.classList.remove("highlight"));
-  if (row) row.classList.add("highlight");
+  document.querySelectorAll(".bar-row.highlight").forEach(r => {
+    r.classList.remove("highlight");
+    const lbl = r.querySelector(".bar-label");
+    if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+  });
+  if (row) {
+    row.classList.add("highlight");
+    const lbl = row.querySelector(".bar-label");
+    if (lbl) lbl.textContent = lbl.dataset.full;
+  }
 }
 
 // --- Rendering ---
@@ -312,9 +320,15 @@ function render() {
     if (w.isMinimum) row.classList.add("minimum");
     if (now >= w.start && now < w.end) row.classList.add("now-marker");
 
+    const fullTime = formatTime(w.start);
+    const shortTime = w.start.getMinutes() === 0 ? fullTime : ":" + String(w.start.getMinutes()).padStart(2, "0");
+    const isNow = now >= w.start && now < w.end;
+
     const labelEl = document.createElement("div");
     labelEl.className = "bar-label";
-    labelEl.textContent = formatTime(w.start);
+    labelEl.dataset.short = shortTime;
+    labelEl.dataset.full = fullTime;
+    labelEl.textContent = isNow ? fullTime : shortTime;
 
     const barArea = document.createElement("div");
     barArea.className = "bar-area";
@@ -350,14 +364,24 @@ function render() {
       if (state.lockedIndex === i) {
         // Unlock
         state.lockedIndex = -1;
-        document.querySelectorAll(".bar-row.locked").forEach(r => r.classList.remove("locked"));
+        document.querySelectorAll(".bar-row.locked").forEach(r => {
+          r.classList.remove("locked");
+          const lbl = r.querySelector(".bar-label");
+          if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+        });
         highlightRow(row);
       } else {
         // Lock to this row
         state.lockedIndex = i;
-        document.querySelectorAll(".bar-row.locked").forEach(r => r.classList.remove("locked"));
+        document.querySelectorAll(".bar-row.locked").forEach(r => {
+          r.classList.remove("locked");
+          const lbl = r.querySelector(".bar-label");
+          if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+        });
         highlightRow(null);
         row.classList.add("locked");
+        const lbl = row.querySelector(".bar-label");
+        if (lbl) lbl.textContent = lbl.dataset.full;
         showDetails(w);
       }
     });
@@ -370,7 +394,11 @@ function render() {
     if (e.target.closest(".bar-row")) return;
     if (state.lockedIndex !== -1) {
       state.lockedIndex = -1;
-      document.querySelectorAll(".bar-row.locked").forEach(r => r.classList.remove("locked"));
+      document.querySelectorAll(".bar-row.locked").forEach(r => {
+        r.classList.remove("locked");
+        const lbl = r.querySelector(".bar-label");
+        if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+      });
       document.getElementById("details").innerHTML = '<span style="color:#555">Zeile berühren für Details</span>';
     }
   });
@@ -385,16 +413,15 @@ function showDetails(w) {
   const details = document.getElementById("details");
   const saving = w.avg - w.dailyAvg;
   const savingClass = saving <= 0 ? "saving-positive" : "saving-negative";
-  const savingStr = saving.toFixed(2);
+  const savingStr = (saving > 0 ? "+" : "") + saving.toFixed(2);
   const windowMin = state.windowSlots * 15;
   const windowLabel = windowMin >= 60 ? `${windowMin / 60}h` : `${windowMin} min`;
 
   let parts = `<span><span class="label">${formatTime(w.start)}–${formatTime(w.end)} </span></span>`;
-  parts += `<span><span class="value">${w.momentary.toFixed(2)}</span> <span class="label">ct/kWh</span></span>`;
+  parts += `<span><span class="value">${w.momentary.toFixed(2)}</span> <span class="value ${savingClass}">${savingStr}</span> <span class="label">ct/kWh</span></span>`;
   if (state.windowSlots > 1) {
     parts += `<span><span class="label">${windowLabel}: </span><span class="value">${w.avg.toFixed(2)}</span></span>`;
   }
-  parts += `<span class="value ${savingClass}">${savingStr} ct</span>`;
   details.innerHTML = parts;
 }
 
