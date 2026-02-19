@@ -383,19 +383,19 @@ function render() {
 
 function showDetails(w) {
   const details = document.getElementById("details");
-  const saving = w.dailyAvg - w.avg;
-  const savingClass = saving >= 0 ? "saving-positive" : "saving-negative";
-  const sign = saving >= 0 ? "+" : "";
+  const saving = w.avg - w.dailyAvg;
+  const savingClass = saving <= 0 ? "saving-positive" : "saving-negative";
+  const savingStr = saving.toFixed(2);
   const windowMin = state.windowSlots * 15;
   const windowLabel = windowMin >= 60 ? `${windowMin / 60}h` : `${windowMin} min`;
 
-  details.innerHTML = `
-    <span><span class="label">Aktuell: </span><span class="value">${w.momentary.toFixed(2)} ct/kWh</span></span>
-    <span><span class="label">${windowLabel}-Schnitt: </span><span class="value">${w.avg.toFixed(2)} ct/kWh</span></span>
-    <span><span class="label">Tagesschnitt: </span><span class="value">${w.dailyAvg.toFixed(2)} ct/kWh</span></span>
-    <span><span class="label">Ersparnis: </span><span class="value ${savingClass}">${sign}${saving.toFixed(2)} ct/kWh</span></span>
-    <span><span class="label">${formatTime(w.start)} – ${formatTime(w.end)}</span></span>
-  `;
+  let parts = `<span><span class="label">${formatTime(w.start)}–${formatTime(w.end)} </span></span>`;
+  parts += `<span><span class="value">${w.momentary.toFixed(2)}</span> <span class="label">ct/kWh</span></span>`;
+  if (state.windowSlots > 1) {
+    parts += `<span><span class="label">${windowLabel}: </span><span class="value">${w.avg.toFixed(2)}</span></span>`;
+  }
+  parts += `<span class="value ${savingClass}">${savingStr} ct</span>`;
+  details.innerHTML = parts;
 }
 
 function formatWindowLabel(slots) {
