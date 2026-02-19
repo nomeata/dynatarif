@@ -26,7 +26,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 #header button { background: none; border: 1px solid #555; color: #aaa; padding: .3rem .7rem; border-radius: 4px; cursor: pointer; font-size: .8rem; }
 
 /* X axis */
-#x-axis { display: flex; align-items: flex-end; padding: 0; flex-shrink: 0; height: 22px; border-bottom: 1px solid #333; }
+#x-axis { display: flex; align-items: flex-end; padding: 0; flex-shrink: 0; height: 22px; border-bottom: 1px solid #333; border-top: 1px solid #333; }
 #x-axis .axis-pad { width: 52px; flex-shrink: 0; }
 #x-axis .axis-area { flex: 1; position: relative; height: 100%; }
 .axis-tick { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 10px; color: #888; font-variant-numeric: tabular-nums; line-height: 22px; }
@@ -42,7 +42,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 #details .saving-negative { color: #e94560; }
 
 /* Slider */
-#controls { background: #16213e; padding: .5rem 1rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; border-top: 1px solid #333; }
+#controls { background: #16213e; padding: .5rem 1rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
 #controls label { font-size: .85rem; color: #888; white-space: nowrap; }
 #controls input[type=range] { flex: 1; accent-color: #e94560; }
 #controls .window-label { font-size: .85rem; color: #e94560; font-weight: 600; min-width: 3.5rem; }
@@ -115,19 +115,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
       </div>
     </div>
   </div>
-  <div id="x-axis">
-    <div class="axis-pad"></div>
-    <div class="axis-area" id="axis-area"></div>
-  </div>
-  <div id="chart-container"><div id="chart"></div></div>
-  <div id="details">
-    <span style="color:#555">Zeile berühren für Details</span>
-  </div>
   <div id="controls">
     <label for="window-slider">Fenster:</label>
     <input type="range" id="window-slider" min="1" max="16" value="1">
     <span class="window-label" id="window-label">15 min</span>
   </div>
+  <div id="details">
+    <span style="color:#555">Zeile berühren für Details</span>
+  </div>
+  <div id="x-axis">
+    <div class="axis-pad"></div>
+    <div class="axis-area" id="axis-area"></div>
+  </div>
+  <div id="chart-container"><div id="chart"></div></div>
 </div>
 
 <script>
