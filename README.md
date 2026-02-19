@@ -20,3 +20,7 @@ Use it at **<https://dynatarif.nomeata.de/>** and log in with your dynatarif cre
 ## Disclaimer
 
 This project is not affiliated with EnergieDock GmbH. No guarantees are made regarding correctness, availability, or continued functionality. Use at your own risk.
+
+---
+
+Vibe-coded using [Claude](https://claude.ai/).

@@ -35,7 +35,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 #chart { width: 100%; position: relative; }
 
 /* Details panel */
-#details { background: #16213e; padding: .6rem 1rem; flex-shrink: 0; font-size: .9rem; min-height: 2.5rem; display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+#details { background: #16213e; padding: .6rem 1rem; flex-shrink: 0; font-size: .9rem; min-height: 2.5rem; display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
 #details .label { color: #888; }
 #details .value { color: #e0e0e0; font-weight: 600; }
 #details .saving-positive { color: #4ecca3; }
@@ -175,7 +175,8 @@ async function fetchPrices(token, contractId) {
 }
 
 // --- State ---
-let state = { prices: [], windowSlots: 1, lockedIndex: -1, maxPrice: 0 };
+const savedWindow = parseInt(localStorage.getItem("strom_window")) || 1;
+let state = { prices: [], windowSlots: savedWindow, lockedIndex: -1, maxPrice: 0 };
 
 function getToken() { return localStorage.getItem("strom_token"); }
 function getContractId() { return localStorage.getItem("strom_contract"); }
@@ -297,6 +298,14 @@ function render() {
 
   renderAxis();
 
+  // Find the single row whose 15-min slot contains now
+  let nowIndex = -1;
+  for (let i = 0; i < windows.length; i++) {
+    const s = windows[i].start;
+    const slotEnd = new Date(s.getTime() + 15 * 60000);
+    if (now >= s && now < slotEnd) { nowIndex = i; break; }
+  }
+
   let lastDayKey = null;
 
   for (let i = 0; i < windows.length; i++) {
@@ -315,14 +324,14 @@ function render() {
       }
     }
 
+    const isNow = i === nowIndex;
     const row = document.createElement("div");
     row.className = "bar-row";
     if (w.isMinimum) row.classList.add("minimum");
-    if (now >= w.start && now < w.end) row.classList.add("now-marker");
+    if (isNow) row.classList.add("now-marker");
 
     const fullTime = formatTime(w.start);
     const shortTime = w.start.getMinutes() === 0 ? fullTime : ":" + String(w.start.getMinutes()).padStart(2, "0");
-    const isNow = now >= w.start && now < w.end;
 
     const labelEl = document.createElement("div");
     labelEl.className = "bar-label";
@@ -417,19 +426,15 @@ function showDetails(w) {
   const windowMin = state.windowSlots * 15;
   const windowLabel = windowMin >= 60 ? `${windowMin / 60}h` : `${windowMin} min`;
 
-  let parts = `<span><span class="label">${formatTime(w.start)}–${formatTime(w.end)} </span></span>`;
-  parts += `<span><span class="value">${w.momentary.toFixed(2)}</span> <span class="value ${savingClass}">${savingStr}</span> <span class="label">ct/kWh</span></span>`;
-  if (state.windowSlots > 1) {
-    parts += `<span><span class="label">${windowLabel}: </span><span class="value">${w.avg.toFixed(2)}</span></span>`;
-  }
-  details.innerHTML = parts;
+  details.innerHTML = `<span class="label" style="margin-right:.5rem">${formatTime(w.start)}–${formatTime(w.end)}</span><span class="value">${w.avg.toFixed(2)}</span> <span class="value ${savingClass}">${savingStr}</span> <span class="label">ct/kWh</span>`;
 }
 
 function formatWindowLabel(slots) {
   const min = slots * 15;
   if (min < 60) return `${min} min`;
-  const h = min / 60;
-  return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h${m}`;
 }
 
 // --- Init ---
@@ -469,6 +474,7 @@ document.getElementById("logout-btn").addEventListener("click", () => {
 
 document.getElementById("window-slider").addEventListener("input", (e) => {
   state.windowSlots = parseInt(e.target.value);
+  localStorage.setItem("strom_window", state.windowSlots);
   document.getElementById("window-label").textContent = formatWindowLabel(state.windowSlots);
   document.getElementById("details").innerHTML = '<span style="color:#555">Zeile berühren für Details</span>';
   render();
@@ -519,6 +525,9 @@ function importFromHash() {
 }
 
 importFromHash();
+
+document.getElementById("window-slider").value = state.windowSlots;
+document.getElementById("window-label").textContent = formatWindowLabel(state.windowSlots);
 
 if (getToken()) {
   initApp();
