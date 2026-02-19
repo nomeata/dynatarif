@@ -21,6 +21,13 @@ Static HTML web app for viewing dynamic electricity prices from web.dynatarif.de
 - Hover shows details, click locks selection
 - Share button generates URL with embedded token
 
+## Hosted at
+https://dynatarif.nomeata.de/ (GitHub Pages via CNAME)
+
+## Mobile viewport
+Use `100svh` (not `100vh`, not `position: fixed; inset: 0`) for full-page layout on Firefox Android.
+`dvh` and `position: fixed` are unreliable there (see Firefox bug #1663634).
+
 ## How the API was discovered
 Claude used Playwright to automate the Flutter CanvasKit UI and intercepted network responses
 to discover the API. See initial commit `03e1c3b` for the Playwright-based version.
