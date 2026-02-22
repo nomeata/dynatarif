@@ -29,7 +29,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 #x-axis { display: flex; align-items: flex-end; padding: 0; flex-shrink: 0; height: 22px; border-bottom: 1px solid #333; }
 #x-axis .axis-pad { width: 52px; flex-shrink: 0; }
 #x-axis .axis-area { flex: 1; position: relative; height: 100%; }
-.axis-tick { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 10px; color: #888; font-variant-numeric: tabular-nums; line-height: 22px; }
+.axis-tick { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 10px; color: #888; font-variant-numeric: tabular-nums; line-height: 22px; white-space: nowrap; }
 
 #chart-container { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 0; position: relative; -webkit-overflow-scrolling: touch; }
 #chart { width: 100%; position: relative; }
@@ -48,19 +48,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 #controls .window-label { font-size: .85rem; color: #e94560; font-weight: 600; min-width: 3.5rem; }
 
 /* Bar rows */
-.bar-row { display: flex; align-items: stretch; cursor: pointer; position: relative; }
+.bar-row { display: flex; align-items: stretch; cursor: pointer; position: relative; height: 8px; }
 .bar-row.highlight .bar, .bar-row.highlight.minimum .bar,
 .bar-row.locked .bar, .bar-row.locked.minimum .bar { background: #8899bb !important; }
 .bar-row.highlight .bar-label,
 .bar-row.locked .bar-label { color: #e0e0e0; }
 .bar-row.minimum .bar { background: #4ecca3 !important; }
-.bar-label { width: 52px; text-align: right; font-size: 11px; padding-right: 6px; flex-shrink: 0; color: #888; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: flex-end; }
+.bar-label { width: 52px; text-align: right; font-size: 11px; padding-right: 6px; flex-shrink: 0; color: #888; font-variant-numeric: tabular-nums; display: flex; align-items: flex-start; justify-content: flex-end; line-height: 1; overflow: visible; }
 .bar-area { flex: 1; position: relative; display: flex; align-items: stretch; }
 .bar { width: 0; min-width: 1px; position: relative; z-index: 1; transition: width 0.2s; background: #667; }
 .avg-line { position: absolute; top: 0; bottom: 0; border-left: 2px dotted rgba(233, 69, 96, 0.5); z-index: 2; pointer-events: none; }
 .day-separator { height: 1px; background: #333; margin: 0 0 0 52px; }
 .day-label { font-size: 11px; color: #e94560; padding: 3px 0 2px 52px; font-weight: 600; }
-.now-marker .bar-label { color: #e94560; font-weight: 700; }
+.now-line { height: 2px; background: #e94560; pointer-events: none; position: relative; z-index: 3; }
 
 /* Modal */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
@@ -247,7 +247,7 @@ function highlightRow(row) {
   document.querySelectorAll(".bar-row.highlight").forEach(r => {
     r.classList.remove("highlight");
     const lbl = r.querySelector(".bar-label");
-    if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+    if (lbl) lbl.textContent = lbl.dataset.short;
   });
   if (row) {
     row.classList.add("highlight");
@@ -333,16 +333,16 @@ function render() {
     const row = document.createElement("div");
     row.className = "bar-row";
     if (w.isMinimum) row.classList.add("minimum");
-    if (isNow) row.classList.add("now-marker");
+    if (w.start.getMinutes() === 0) row.style.zIndex = 1;
 
     const fullTime = formatTime(w.start);
-    const shortTime = w.start.getMinutes() === 0 ? fullTime : ":" + String(w.start.getMinutes()).padStart(2, "0");
+    const shortTime = w.start.getMinutes() === 0 ? fullTime : "";
 
     const labelEl = document.createElement("div");
     labelEl.className = "bar-label";
     labelEl.dataset.short = shortTime;
     labelEl.dataset.full = fullTime;
-    labelEl.textContent = isNow ? fullTime : shortTime;
+    labelEl.textContent = shortTime;
 
     const barArea = document.createElement("div");
     barArea.className = "bar-area";
@@ -381,7 +381,7 @@ function render() {
         document.querySelectorAll(".bar-row.locked").forEach(r => {
           r.classList.remove("locked");
           const lbl = r.querySelector(".bar-label");
-          if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+          if (lbl) lbl.textContent = lbl.dataset.short;
         });
         highlightRow(row);
       } else {
@@ -390,7 +390,7 @@ function render() {
         document.querySelectorAll(".bar-row.locked").forEach(r => {
           r.classList.remove("locked");
           const lbl = r.querySelector(".bar-label");
-          if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+          if (lbl) lbl.textContent = lbl.dataset.short;
         });
         highlightRow(null);
         row.classList.add("locked");
@@ -400,6 +400,11 @@ function render() {
       }
     });
 
+    if (isNow) {
+      const nowLine = document.createElement("div");
+      nowLine.className = "now-line";
+      chart.appendChild(nowLine);
+    }
     chart.appendChild(row);
   }
 
@@ -411,7 +416,7 @@ function render() {
       document.querySelectorAll(".bar-row.locked").forEach(r => {
         r.classList.remove("locked");
         const lbl = r.querySelector(".bar-label");
-        if (lbl && !r.classList.contains("now-marker")) lbl.textContent = lbl.dataset.short;
+        if (lbl) lbl.textContent = lbl.dataset.short;
       });
       document.getElementById("details").innerHTML = '<span style="color:#555">Zeile berühren für Details</span>';
     }
@@ -421,7 +426,7 @@ function render() {
 
   if (state.scrollToNow) {
     state.scrollToNow = false;
-    const nowRow = chart.querySelector(".now-marker");
+    const nowRow = chart.querySelector(".now-line");
     if (nowRow) {
       nowRow.scrollIntoView({ block: "center", behavior: "instant" });
     }
