@@ -134,7 +134,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 const API = "https://api.dynatarif.de";
 
 // --- Auth ---
-async function apiRequest(path, token, formData) {
+async function apiRequest(path, token, formData, _isRetry) {
   const opts = { headers: {} };
   if (token) opts.headers["Authorization"] = `Bearer ${token}`;
   if (formData) {
@@ -143,8 +143,34 @@ async function apiRequest(path, token, formData) {
     opts.body = new URLSearchParams(formData).toString();
   }
   const resp = await fetch(`${API}${path}`, opts);
+  if (resp.status === 401 && token && !_isRetry) {
+    const newToken = await tryRefresh();
+    if (newToken) return apiRequest(path, newToken, formData, true);
+  }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
+}
+
+async function tryRefresh() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  try {
+    const resp = await fetch(`${API}/tokens/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token", refresh_token: refreshToken,
+      }).toString(),
+    });
+    if (!resp.ok) return null;
+    const body = await resp.json();
+    if (body.access_token) {
+      localStorage.setItem("strom_token", body.access_token);
+      if (body.refresh_token) localStorage.setItem("strom_refresh", body.refresh_token);
+      return body.access_token;
+    }
+    return null;
+  } catch (e) { return null; }
 }
 
 async function login(email, password) {
@@ -152,9 +178,10 @@ async function login(email, password) {
     grant_type: "password", username: email, password: password,
   });
   const token = body.access_token;
+  const refreshToken = body.refresh_token;
   const user = await apiRequest("/users/me/", token);
   const contractId = user.contracts[0].contract_id;
-  return { token, contractId };
+  return { token, contractId, refreshToken };
 }
 
 async function fetchPrices(token, contractId) {
@@ -180,13 +207,16 @@ let state = { prices: [], windowSlots: savedWindow, lockedIndex: -1, maxPrice: 0
 
 function getToken() { return localStorage.getItem("strom_token"); }
 function getContractId() { return localStorage.getItem("strom_contract"); }
-function setAuth(token, contractId) {
+function getRefreshToken() { return localStorage.getItem("strom_refresh"); }
+function setAuth(token, contractId, refreshToken) {
   localStorage.setItem("strom_token", token);
   localStorage.setItem("strom_contract", contractId);
+  if (refreshToken) localStorage.setItem("strom_refresh", refreshToken);
 }
 function clearAuth() {
   localStorage.removeItem("strom_token");
   localStorage.removeItem("strom_contract");
+  localStorage.removeItem("strom_refresh");
 }
 
 // --- Computation ---
@@ -475,8 +505,8 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   const email = document.getElementById("email").value;
   const pw = document.getElementById("password").value;
   try {
-    const { token, contractId } = await login(email, pw);
-    setAuth(token, contractId);
+    const { token, contractId, refreshToken } = await login(email, pw);
+    setAuth(token, contractId, refreshToken);
     initApp();
   } catch (err) {
     errEl.textContent = "Anmeldung fehlgeschlagen";
@@ -500,8 +530,10 @@ document.getElementById("window-slider").addEventListener("input", (e) => {
 document.getElementById("share-btn").addEventListener("click", () => {
   const token = getToken();
   const contractId = getContractId();
+  const refreshToken = getRefreshToken();
   if (!token || !contractId) return;
-  const hash = "#token=" + encodeURIComponent(token) + "&contract=" + encodeURIComponent(contractId);
+  let hash = "#token=" + encodeURIComponent(token) + "&contract=" + encodeURIComponent(contractId);
+  if (refreshToken) hash += "&refresh=" + encodeURIComponent(refreshToken);
   const url = location.origin + location.pathname + hash;
   document.getElementById("share-url").value = url;
   document.getElementById("copy-status").textContent = "";
@@ -532,8 +564,9 @@ function importFromHash() {
   const params = new URLSearchParams(hash.slice(1));
   const token = params.get("token");
   const contractId = params.get("contract");
+  const refreshToken = params.get("refresh");
   if (token && contractId) {
-    setAuth(token, contractId);
+    setAuth(token, contractId, refreshToken);
     history.replaceState(null, "", location.pathname + location.search);
     return true;
   }
