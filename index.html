@@ -203,7 +203,7 @@ async function fetchPrices(token, contractId) {
 
 // --- State ---
 const savedWindow = parseInt(localStorage.getItem("strom_window")) || 1;
-let state = { prices: [], windowSlots: savedWindow, lockedIndex: -1, maxPrice: 0 };
+let state = { prices: [], windowSlots: savedWindow, lockedIndex: -1, maxPrice: 0, minPrice: 0 };
 
 function getToken() { return localStorage.getItem("strom_token"); }
 function getContractId() { return localStorage.getItem("strom_contract"); }
@@ -290,15 +290,16 @@ function highlightRow(row) {
 function renderAxis() {
   const area = document.getElementById("axis-area");
   area.innerHTML = "";
-  if (!state.maxPrice) return;
+  const range = state.maxPrice - state.minPrice;
+  if (!range) return;
 
-  // Nice tick interval
-  const raw = state.maxPrice;
-  const step = raw <= 10 ? 2 : raw <= 20 ? 5 : raw <= 50 ? 10 : 20;
-  for (let v = 0; v <= raw; v += step) {
+  // Nice tick interval based on full range
+  const step = range <= 10 ? 2 : range <= 20 ? 5 : range <= 50 ? 10 : 20;
+  const startTick = Math.ceil(state.minPrice / step) * step;
+  for (let v = startTick; v <= state.maxPrice; v += step) {
     const tick = document.createElement("div");
     tick.className = "axis-tick";
-    tick.style.left = ((v / state.maxPrice) * 100) + "%";
+    tick.style.left = ((v - state.minPrice) / range * 100) + "%";
     tick.textContent = v;
     area.appendChild(tick);
   }
@@ -327,8 +328,14 @@ function render() {
     return;
   }
 
-  state.maxPrice = Math.max(...windows.map(w => w.avg), ...Object.values(dailyAvgs)) * 1.05;
+  const allValues = [...windows.map(w => w.avg), ...Object.values(dailyAvgs)];
+  state.maxPrice = Math.max(...allValues) * 1.05;
+  state.minPrice = Math.min(0, ...allValues);
+  if (state.minPrice < 0) state.minPrice *= 1.05;
   const maxPrice = state.maxPrice;
+  const minPrice = state.minPrice;
+  const range = maxPrice - minPrice;
+  const zeroPos = (-minPrice / range) * 100;
   const now = new Date();
 
   renderAxis();
@@ -379,13 +386,23 @@ function render() {
 
     const bar = document.createElement("div");
     bar.className = "bar";
-    bar.style.width = Math.max(0, (w.avg / maxPrice) * 100) + "%";
+    const valPos = ((w.avg - minPrice) / range) * 100;
+    bar.style.marginLeft = Math.min(zeroPos, valPos) + "%";
+    bar.style.width = Math.abs(valPos - zeroPos) + "%";
 
     const avgLine = document.createElement("div");
     avgLine.className = "avg-line";
-    avgLine.style.left = ((w.dailyAvg / maxPrice) * 100) + "%";
+    avgLine.style.left = ((w.dailyAvg - minPrice) / range * 100) + "%";
 
     barArea.appendChild(avgLine);
+    if (minPrice < 0) {
+      const zeroLine = document.createElement("div");
+      zeroLine.className = "avg-line";
+      zeroLine.style.left = zeroPos + "%";
+      zeroLine.style.borderLeftColor = "rgba(255,255,255,0.2)";
+      zeroLine.style.borderLeftStyle = "solid";
+      barArea.appendChild(zeroLine);
+    }
     barArea.appendChild(bar);
     row.appendChild(labelEl);
     row.appendChild(barArea);
